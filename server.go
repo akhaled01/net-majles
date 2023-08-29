@@ -24,7 +24,7 @@ func main() {
 			log.Fatal(err)
 		}
 	}
-
+	fmt.Println(funcs.GetLocalIP())
 	listen, err := net.Listen(TYPE, funcs.GetLocalIP()+":"+fmt.Sprint(PORT))
 	// fmt.Println("Listening and serving on port ")
 	if err != nil {

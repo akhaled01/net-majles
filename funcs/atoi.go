@@ -2,7 +2,7 @@ package funcs
 
 import "fmt"
 
-//* why no strconv??
+//* why no strconv allowed??
 func Atoi(s string) (int, error) {
 	st := []rune(s)
 	n := 0

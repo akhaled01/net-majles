@@ -11,6 +11,7 @@ import (
 
 var mu sync.Mutex
 
+// struct pool is how we store connections
 type pool struct {
 	conns []net.Conn
 }
@@ -24,6 +25,7 @@ func (p *pool) Reply(reply []byte) {
 var mainpool pool
 
 func AddUser(listen net.Listener) {
+	// lock the thread to accept connections, then unlock
 	mu.Lock()
 	conn, err := listen.Accept()
 	mu.Unlock()
@@ -32,12 +34,12 @@ func AddUser(listen net.Listener) {
 		os.Exit(1)
 	}
 	mainpool.conns = append(mainpool.conns, conn)
+	//TODO: Add username authentication here
 	channel := make(chan string, 1)
 	go HandleRequest(conn, channel)
-	for {
-		chans := <-channel
-		fmt.Println(chans)
-		go mainpool.Reply([]byte(chans))
+	for message := range channel {
+		fmt.Println(message)
+		go mainpool.Reply([]byte(message))
 	}
 }
 
@@ -50,7 +52,7 @@ func HandleRequest(conn net.Conn, channel chan string) {
 			log.Fatal(err)
 		}
 
-		// write data to response
+		// write data to channel
 		t := time.Now().Format(time.ANSIC)
 		responseStr := fmt.Sprintf("[%v] %v", t, string(buffer[:]))
 
