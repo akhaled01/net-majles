@@ -1,6 +1,7 @@
 package funcs
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"net"
@@ -9,52 +10,107 @@ import (
 	"time"
 )
 
-var mu sync.Mutex
-
-// struct pool is how we store connections
-type pool struct {
-	conns []net.Conn
+type User struct {
+	name       string
+	connection net.Conn
 }
 
-func (p *pool) Reply(reply []byte) {
-	for _, c := range p.conns {
-		c.Write(reply)
+var mu sync.Mutex
+var userpool []User
+
+func Reply(reply []byte) {
+	for _, c := range userpool {
+		c.connection.Write(reply)
 	}
 }
 
-var mainpool pool
+func CloseConnection(toremoveconn User) {
+	for index, v := range userpool {
+		if v == toremoveconn {
+			toremoveconn.connection.Close()
+			Reply([]byte(fmt.Sprintf("\n%v left the chat\n", userpool[index].name)))
+			userpool = append(userpool[:index], userpool[index+1:]...)
+			break
+		}
+	}
+
+	fmt.Println("After ", userpool)
+	fmt.Println("............................................................")
+	fmt.Println("Connection closed and removed successfully")
+}
+
+func AuthenticateUser(conn net.Conn) {
+	timeoutDuration := 30 * time.Second
+	bufReader := bufio.NewReader(conn)
+	// Set a deadline for reading. Read operation will fail if no data
+	// is received after deadline.
+	conn.SetReadDeadline(time.Now().Add(timeoutDuration))
+	logo := `
+	 .--.
+	|o_o |
+	|:_/ |
+   //   \ \
+  (|     | )
+ /'\_   _/ \
+ \___)=(___0\/`
+	conn.Write([]byte(logo))
+	conn.Write([]byte("\nWelcome to net majles\n"))
+	conn.Write([]byte("Enter Your name: "))
+	// Read tokens delimited by newline
+	bytes, err := bufReader.ReadBytes('\n')
+	if err != nil {
+		fmt.Println(err)
+		conn.Write([]byte("\nNo username detected. Exiting....\n"))
+		conn.Close()
+		return
+	}
+	conn.SetDeadline(time.Time{})
+	newUser := &User{}
+	newUser.name = string(bytes[:len(bytes)-1])
+	if newUser.name == "" {
+		conn.Close()
+	}
+	newUser.connection = conn
+	Reply([]byte(fmt.Sprintf("\n%v joined the chat\n", newUser.name)))
+	// append to users
+	userpool = append(userpool, *newUser)
+
+}
 
 func AddUser(listen net.Listener) {
 	// lock the thread to accept connections, then unlock
 	mu.Lock()
 	conn, err := listen.Accept()
+	go AuthenticateUser(conn)
 	mu.Unlock()
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
-	mainpool.conns = append(mainpool.conns, conn)
 	//TODO: Add username authentication here
 	channel := make(chan string, 1)
-	go HandleRequest(conn, channel)
+	for _, u := range userpool {
+		go HandleRequest(conn, channel, u)
+	}
 	for message := range channel {
 		fmt.Println(message)
-		go mainpool.Reply([]byte(message))
+		go Reply([]byte(message))
 	}
 }
 
-func HandleRequest(conn net.Conn, channel chan string) {
+func HandleRequest(conn net.Conn, channel chan string, u User) {
 	for {
 		// incoming request
 		buffer := make([]byte, 1024)
 		_, err := conn.Read(buffer)
 		if err != nil {
-			log.Fatal(err)
+			CloseConnection(u)
+			break
 		}
 
 		// write data to channel
 		t := time.Now().Format(time.ANSIC)
-		responseStr := fmt.Sprintf("[%v] %v", t, string(buffer[:]))
+		responseStr := fmt.Sprintf("\n[%v][%v] %v\n", t, u.name, string(buffer[:]))
 
 		channel <- responseStr
 	}
